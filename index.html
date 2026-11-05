@@ -110,6 +110,9 @@ button,input,select{font:inherit;color:inherit}
 .ini-inv-b ul{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:14px}
 .ini-inv-b li{display:flex;justify-content:space-between;gap:8px}
 .ini-inv-b .btn{justify-self:start;min-height:44px}
+.ini-nube{display:flex;align-items:baseline;gap:8px;font-size:14px;color:var(--muted);margin:-2px 0 10px}
+.ini-nube:empty{display:none}
+.ini-nube .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none;transform:translateY(-1px)}
 .linklike{border:0;background:none;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
 .tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
 .tab{flex:0 0 auto;display:grid;grid-template-columns:auto auto;gap:2px 14px;align-items:center;text-align:left;min-width:150px;min-height:60px;padding:8px 12px;
@@ -406,6 +409,7 @@ button,input,select{font:inherit;color:inherit}
       </div>
       <section class="card" aria-labelledby="iniTrabT">
         <div class="card-head"><h2 id="iniTrabT">Trabajos</h2><span class="ini-alerta" id="iniTrabN"></span></div>
+        <p class="ini-nube" id="iniNube" aria-live="polite"></p>
         <div id="iniTrab"></div>
       </section>
       <section class="card" aria-labelledby="iniInvT">
@@ -4917,6 +4921,11 @@ function renderInicio(){
   $('#iniTrab').innerHTML = items.length
     ? grupo('En el taller', taller, 'No hay trabajos pendientes.') + (ingreso.length ? grupo('En ingreso', ingreso, '') : '') + (fin.length ? grupo('Terminados', fin, '') : '')
     : '<p class="hint">Todavía no hay trabajos. Crea un trabajo manual o abre un proyecto exportado desde SketchUp.</p>';
+  $('#iniNube').innerHTML = vistaPrevia ? ''
+    : !USUARIO ? `<span class="dot"></span><span>Para ver aquí los proyectos subidos desde otros equipos, <button type="button" class="linklike" data-act="cuenta">entra con la cuenta del taller</button>.</span>`
+    : NUBE_ERR ? `<span class="dot mal"></span><span>No se pudo leer la base de datos: ${esc(NUBE_ERR)}</span>`
+    : NUBE_OK ? `<span class="dot ok"></span><span>Conectado a la base de datos del taller · ${NUBE_LISTA.length} ${NUBE_LISTA.length === 1 ? 'proyecto' : 'proyectos'} en la nube</span>`
+    : '<span class="dot"></span><span>Conectando con la base de datos…</span>';
   const atrasados = taller.filter(i => i.fecha && i.fecha < hoy).length;
   $('#iniTrabN').textContent = atrasados ? `${atrasados} ${atrasados === 1 ? 'atrasado' : 'atrasados'}` : '';
   // resumen del inventario
@@ -4941,7 +4950,7 @@ function mostrarInicio(){
   $('#projEyebrow').textContent = capital(new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })); $('#projName').textContent = 'Inicio';
   $$('.sheet').forEach(s => { s.hidden = true; });
   renderInicio(); renderEtiqueta(false); window.scrollTo(0, 0);
-  if (USUARIO) listaNube();
+  if (USUARIO && !cortarLista) listaNube();
 }
 $('#btnHome').addEventListener('click', mostrarInicio);
 $('#iniNuevo').addEventListener('click', () => { abrirEditor(nuevoTrabajo(), 'inicio'); guardarAhora(); });
@@ -4953,6 +4962,7 @@ $('#inicio').addEventListener('click', e => {
   const act = b.dataset.act;
   if (act === 'sob'){ abrirSobrantes(); return; }
   if (act === 'tc'){ abrirTapacantos(); return; }
+  if (act === 'cuenta'){ abrirCuenta(); return; }
   const box = b.closest('[data-tipo]'); if (!box) return;
   const tipo = box.dataset.tipo, id = box.dataset.id;
   if (tipo === 'nube'){ if (act === 'abrir'){ const n = NUBE_LISTA.find(x => x.pid === id); abrirDeNube(id, n && n.nombre); } return; }
@@ -4986,7 +4996,7 @@ const FB_CONFIG = {
   appId: '1:198627993558:web:fbcb1aa52c12d2d01ba677'
 };
 const FB_BASE = 'https://cdn.jsdelivr.net/npm/firebase@10.14.1/';
-let fbListo = null, USUARIO = null, NUBE_LISTA = [], NUBE_ERR = '';
+let fbListo = null, USUARIO = null, NUBE_LISTA = [], NUBE_ERR = '', NUBE_OK = false, cortarLista = null;
 function cargarScript(src){
   return new Promise((ok, mal) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = ok; s.onerror = () => mal(new Error('sin conexión')); document.head.appendChild(s); });
 }
@@ -5002,11 +5012,11 @@ function nube(){
       auth.onAuthStateChanged(u => {
         USUARIO = u || null; pintarCuenta();
         if (primero){ primero = false; ok(); }
-        if (u){ subirPendientes(); listaNube(); } else { NUBE_LISTA = []; refrescarInicio(); }
+        if (u){ subirPendientes(); escucharLista(db); } else { if (cortarLista){ cortarLista(); cortarLista = null; } NUBE_LISTA = []; NUBE_OK = false; refrescarInicio(); }
       });
     });
     return { app, auth, db };
-  })().catch(e => { fbListo = null; NUBE_ERR = e.message || 'error'; throw e; });
+  })().catch(e => { fbListo = null; NUBE_ERR = errorNube(e); refrescarInicio(); throw e; });
   return fbListo;
 }
 const errorNube = e => {
@@ -5051,13 +5061,20 @@ async function subirPendientes(){
   try { for (const r of RECIENTES.filter(x => !x.nube && x.raw)){ try { await subirProyecto(r.raw, procesar(r.raw), false); } catch(e){ console.error(e); } } }
   finally { subiendo = false; }
 }
+// la lista del Inicio se actualiza sola cuando otro equipo sube un proyecto
+function escucharLista(db){
+  if (cortarLista) cortarLista();
+  cortarLista = db.collection('proyectos_lista').orderBy('subido', 'desc').limit(60).onSnapshot(
+    snap => { NUBE_LISTA = snap.docs.map(d => Object.assign({ pid: d.id }, d.data())); NUBE_ERR = ''; NUBE_OK = true; refrescarInicio(); },
+    err => { console.error(err); NUBE_ERR = errorNube(err); NUBE_OK = false; refrescarInicio(); });
+}
 async function listaNube(){
   if (!USUARIO) return;
   try {
     const { db } = await nube();
     const q = await db.collection('proyectos_lista').orderBy('subido', 'desc').limit(60).get();
     NUBE_LISTA = q.docs.map(d => Object.assign({ pid: d.id }, d.data()));
-    NUBE_ERR = '';
+    NUBE_ERR = ''; NUBE_OK = true;
   } catch(e){ console.error(e); NUBE_ERR = errorNube(e); }
   refrescarInicio();
 }
