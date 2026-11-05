@@ -3531,6 +3531,12 @@ function etiquetaSVG(inst){
   if (h > bxH){ h = bxH; w = bxH * r; }
   const rx = 126 + (bxW - w) / 2, ry = 152 + (bxH - h) / 2, E = 14;
   s += `<rect x="${rx}" y="${ry}" width="${w}" height="${h}" fill="#fff" stroke="#000" stroke-width="3"/>`;
+  // veta: líneas finas y cortadas a lo largo de la pieza (el largo se dibuja siempre horizontal)
+  if (p.veta){
+    const m = 8, paso = 15;
+    for (let yy = ry + m + 3, k = 0; yy <= ry + h - m; yy += paso, k++)
+      s += `<line x1="${(rx + m).toFixed(1)}" y1="${yy.toFixed(1)}" x2="${(rx + w - m).toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#000" stroke-width="2.5" stroke-dasharray="${k % 2 ? '22 12' : '14 16'}" stroke-dashoffset="${(k * 11) % 26}"/>`;
+  }
   if (t.l1) s += `<rect x="${rx - E}" y="${ry - E}" width="${w + 2*E}" height="${E}" fill="#000"/>`;
   if (t.l2) s += `<rect x="${rx - E}" y="${ry + h}" width="${w + 2*E}" height="${E}" fill="#000"/>`;
   if (t.c1) s += `<rect x="${rx - E}" y="${ry - E}" width="${E}" height="${h + 2*E}" fill="#000"/>`;
