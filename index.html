@@ -391,6 +391,7 @@ button,input,select{font:inherit;color:inherit}
       <button class="chipbtn" id="btnSettings" type="button">Ajustes de corte</button>
       <button class="chipbtn" id="btn3dAll" type="button">Ver proyecto en 3D</button>
       <button class="chipbtn" id="printerPill" type="button"><span class="dot"></span>Impresora: modo prueba</button>
+      <button class="chipbtn" id="btnCuenta" type="button">Entrar</button>
     </div>
     <input type="file" id="fileIn" accept=".json,application/json" hidden>
   </header>
@@ -411,7 +412,7 @@ button,input,select{font:inherit;color:inherit}
         <div class="card-head"><h2 id="iniInvT">Inventario</h2></div>
         <div class="ini-inv" id="iniInv"></div>
       </section>
-      <p class="hint">En esta vista previa, los trabajos y el inventario quedan guardados solo en este equipo. <button type="button" class="linklike" id="iniEjemplo">Abrir el proyecto de ejemplo</button></p>
+      <p class="hint">Los proyectos de SketchUp se comparten entre los equipos que entran con la cuenta del taller. Los trabajos manuales y el inventario, por ahora, quedan guardados solo en este equipo. <button type="button" class="linklike" id="iniEjemplo">Abrir el proyecto de ejemplo</button></p>
     </section>
     <section class="work" aria-label="Dimensionado">
       <nav class="tabs" id="tabs" aria-label="Tableros"></nav>
@@ -574,7 +575,7 @@ button,input,select{font:inherit;color:inherit}
     <section class="sob-sec" aria-labelledby="sobInvT">
       <h4 id="sobInvT">Inventario</h4>
       <div class="jlist" id="sobInv"></div>
-      <p class="hint">En esta vista previa, el inventario queda guardado solo en este equipo.</p>
+      <p class="hint">Por ahora, el inventario queda guardado solo en este equipo.</p>
     </section>
     <button class="btn btn-quiet" id="sobClose" type="button">Cerrar</button>
   </div>
@@ -606,7 +607,7 @@ button,input,select{font:inherit;color:inherit}
     <section class="sob-sec" aria-labelledby="tcInvT">
       <h4 id="tcInvT">Inventario</h4>
       <div class="jlist" id="tcInv"></div>
-      <p class="hint">En esta vista previa, el inventario queda guardado solo en este equipo.</p>
+      <p class="hint">Por ahora, el inventario queda guardado solo en este equipo.</p>
     </section>
     <button class="btn btn-quiet" id="tcClose" type="button">Cerrar</button>
   </div>
@@ -646,6 +647,31 @@ button,input,select{font:inherit;color:inherit}
     <h3 id="qrTitle"></h3>
     <p id="qrText"></p>
     <div class="sheet-actions"><button class="btn btn-primary" id="qrClose" type="button">Entendido</button></div>
+  </div>
+</div>
+
+<div class="sheet" id="cuentaSheet" hidden role="dialog" aria-modal="true" aria-labelledby="cuentaTitle">
+  <div class="sheet-card" style="max-width:480px">
+    <p class="eyebrow">Base de datos del taller</p>
+    <h3 id="cuentaTitle">Cuenta del taller</h3>
+    <form id="cuentaForm" class="sob-form" autocomplete="on">
+      <div id="cuentaFuera">
+        <p class="hint" style="margin-bottom:10px">Entra con el usuario del taller para que los proyectos que abras en este equipo queden en la base de datos. Así sus QR se ven desde cualquier teléfono, y los demás equipos del taller los ven en su Inicio. Para mirar un mueble escaneando su QR no hace falta entrar.</p>
+        <div class="field"><label for="cuEmail">Correo</label><input id="cuEmail" type="email" autocomplete="username" inputmode="email" required></div>
+        <div class="field" style="margin-top:10px"><label for="cuClave">Clave</label><input id="cuClave" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-primary" type="submit" style="margin-top:12px">Entrar</button>
+      </div>
+    </form>
+    <div id="cuentaDentro" hidden>
+      <p class="prn-estado"><span class="dot ok"></span><b>Conectado</b> · <span id="cuentaQuien"></span></p>
+      <p class="hint" id="cuentaPend"></p>
+      <div class="sheet-actions">
+        <button class="btn btn-primary" id="cuentaSubir" type="button">Subir los proyectos de este equipo</button>
+        <button class="btn btn-quiet" id="cuentaSalir" type="button">Salir de la cuenta</button>
+      </div>
+    </div>
+    <p class="hint" id="cuentaMsg" aria-live="polite"></p>
+    <button class="btn btn-quiet" id="cuentaClose" type="button">Cerrar</button>
   </div>
 </div>
 
@@ -3939,6 +3965,7 @@ document.addEventListener('keydown', e => {
   else if (!$('#tcSheet').hidden){ $('#tcSheet').hidden = true; refrescarInicio(); }
   else if (!$('#prnSheet').hidden) $('#prnSheet').hidden = true;
   else if (!$('#qrSheet').hidden) $('#qrSheet').hidden = true;
+  else if (!$('#cuentaSheet').hidden) $('#cuentaSheet').hidden = true;
   else if (!$('#viewer').hidden && !document.body.classList.contains('solo')) cerrarVisor();
 });
 
@@ -4844,7 +4871,14 @@ function itemsInicio(){
     const d = leer(r.clave, null), c = d && d.cut ? Math.min(d.cut.length, r.total) : 0;
     items.push({ tipo: 'sk', id: r.clave, r, total: r.total, c, enviado: true, ench: false, fin: r.total > 0 && c >= r.total,
       titulo: r.nombre, det: `Proyecto de SketchUp · ${r.total} tablas${r.exportado ? ' · exportado el ' + fechaCorta(String(r.exportado).slice(0, 10)) : ''}`,
-      fecha: '', orden: r.abierto || '' });
+      fecha: '', orden: r.abierto || '', nube: !!r.nube });
+  });
+  const locales = new Set(RECIENTES.map(r => hashCorto(r.clave)));
+  NUBE_LISTA.filter(n => !locales.has(n.pid)).forEach(n => {
+    const f = n.subido && n.subido.toDate ? n.subido.toDate().toISOString() : '';
+    items.push({ tipo: 'nube', id: n.pid, n, total: n.tablas || 0, c: 0, enviado: true, ench: false, fin: false,
+      titulo: n.nombre || 'Proyecto', det: `Proyecto de SketchUp · ${n.tablas || 0} tablas · en la base de datos${n.por ? ', subido por ' + n.por.split('@')[0] : ''}`,
+      fecha: '', orden: f, nube: true });
   });
   return items;
 }
@@ -4854,13 +4888,14 @@ function chipEstado(i){
   if (i.c > 0) return `<span class="st st-curso">${i.ench ? 'Enchapando' : 'Cortando'} <span class="num">${i.c}/${i.total}</span></span>`;
   return `<span class="st">${i.ench ? 'Por enchapar' : 'Por cortar'}</span>`;
 }
+const chipNube = i => i.tipo === 'sk' && USUARIO && !i.nube ? '<span class="st st-ing">Solo en este equipo</span>' : '';
 function itemHTML(i){
   const atrasado = i.fecha && !i.fin && i.fecha < hoyISO();
   const acts = (i.enviado ? '<button type="button" class="btn btn-primary" data-act="abrir">Abrir</button>' : '<button type="button" class="btn btn-primary" data-act="editar">Seguir ingresando</button>')
     + (i.tipo === 'manual' && i.enviado ? '<button type="button" class="btn" data-act="editar">Editar</button>' : '')
-    + `<button type="button" class="btn btn-quiet" data-act="borrar" aria-label="${i.tipo === 'manual' ? 'Eliminar' : 'Quitar de la lista'} ${esc(i.titulo)}">${i.tipo === 'manual' ? 'Eliminar' : 'Quitar'}</button>`;
+    + (i.tipo === 'nube' ? '' : `<button type="button" class="btn btn-quiet" data-act="borrar" aria-label="${i.tipo === 'manual' ? 'Eliminar' : 'Quitar de la lista'} ${esc(i.titulo)}">${i.tipo === 'manual' ? 'Eliminar' : 'Quitar'}</button>`);
   return `<div class="jitem ini-item${i.fin ? ' usado' : ''}" data-tipo="${i.tipo}" data-id="${esc(i.id)}">
-    <div style="min-width:0"><div class="ini-t"><b>${esc(i.titulo)}</b>${chipEstado(i)}${atrasado ? '<span class="st st-mal">Entrega atrasada</span>' : ''}</div><p>${esc(i.det)}</p></div>
+    <div style="min-width:0"><div class="ini-t"><b>${esc(i.titulo)}</b>${chipEstado(i)}${chipNube(i)}${atrasado ? '<span class="st st-mal">Entrega atrasada</span>' : ''}</div><p>${esc(i.det)}</p></div>
     <div class="acts">${acts}</div></div>`;
 }
 function renderInicio(){
@@ -4906,6 +4941,7 @@ function mostrarInicio(){
   $('#projEyebrow').textContent = capital(new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })); $('#projName').textContent = 'Inicio';
   $$('.sheet').forEach(s => { s.hidden = true; });
   renderInicio(); renderEtiqueta(false); window.scrollTo(0, 0);
+  if (USUARIO) listaNube();
 }
 $('#btnHome').addEventListener('click', mostrarInicio);
 $('#iniNuevo').addEventListener('click', () => { abrirEditor(nuevoTrabajo(), 'inicio'); guardarAhora(); });
@@ -4919,6 +4955,7 @@ $('#inicio').addEventListener('click', e => {
   if (act === 'tc'){ abrirTapacantos(); return; }
   const box = b.closest('[data-tipo]'); if (!box) return;
   const tipo = box.dataset.tipo, id = box.dataset.id;
+  if (tipo === 'nube'){ if (act === 'abrir'){ const n = NUBE_LISTA.find(x => x.pid === id); abrirDeNube(id, n && n.nombre); } return; }
   const J = tipo === 'manual' ? TRABAJOS.find(t => t.id === id) : null, r = tipo === 'sk' ? RECIENTES.find(x => x.clave === id) : null;
   if (!J && !r){ renderInicio(); return; }
   if (act === 'abrir'){ iniciarProyecto(J ? trabajoARaw(J) : r.raw); return; }
@@ -4937,6 +4974,142 @@ $('#btnEditJob').addEventListener('click', () => {
   if (job) abrirEditor(job, 'taller'); else toast('Este trabajo ya no está guardado en este equipo.');
 });
 
+/* ---------- Base de datos compartida (Firebase) ----------
+   proyectos/{pid}        → el proyecto completo (lo puede leer cualquiera que tenga el QR)
+   proyectos_lista/{pid}  → nombre y fecha, para la lista del Inicio (solo usuarios del taller) */
+const FB_CONFIG = {
+  apiKey: 'AIzaSyB7hTF9HkoPx7M-ySS6qpoqOH1a_YOIYcI',
+  authDomain: 'palmira-taller.firebaseapp.com',
+  projectId: 'palmira-taller',
+  storageBucket: 'palmira-taller.firebasestorage.app',
+  messagingSenderId: '198627993558',
+  appId: '1:198627993558:web:fbcb1aa52c12d2d01ba677'
+};
+const FB_BASE = 'https://cdn.jsdelivr.net/npm/firebase@10.14.1/';
+let fbListo = null, USUARIO = null, NUBE_LISTA = [], NUBE_ERR = '';
+function cargarScript(src){
+  return new Promise((ok, mal) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = ok; s.onerror = () => mal(new Error('sin conexión')); document.head.appendChild(s); });
+}
+function nube(){
+  if (fbListo) return fbListo;
+  fbListo = (async () => {
+    if (!window.firebase || !window.firebase.initializeApp) await cargarScript(FB_BASE + 'firebase-app-compat.js');
+    await Promise.all([window.firebase.auth ? null : cargarScript(FB_BASE + 'firebase-auth-compat.js'), window.firebase.firestore ? null : cargarScript(FB_BASE + 'firebase-firestore-compat.js')]);
+    const app = window.firebase.apps && window.firebase.apps.length ? window.firebase.app() : window.firebase.initializeApp(FB_CONFIG);
+    const auth = window.firebase.auth(), db = window.firebase.firestore();
+    await new Promise(ok => {
+      let primero = true;
+      auth.onAuthStateChanged(u => {
+        USUARIO = u || null; pintarCuenta();
+        if (primero){ primero = false; ok(); }
+        if (u){ subirPendientes(); listaNube(); } else { NUBE_LISTA = []; refrescarInicio(); }
+      });
+    });
+    return { app, auth, db };
+  })().catch(e => { fbListo = null; NUBE_ERR = e.message || 'error'; throw e; });
+  return fbListo;
+}
+const errorNube = e => {
+  const c = (e && (e.code || e.message)) || '';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-email|invalid-login/i.test(c)) return 'el correo o la clave no son correctos.';
+  if (/too-many-requests/i.test(c)) return 'demasiados intentos. Espera unos minutos.';
+  if (/network|sin conexión|unavailable|offline/i.test(c)) return 'no hay conexión a internet.';
+  if (/operation-not-allowed/i.test(c)) return 'falta activar "Correo electrónico/contraseña" en Authentication de Firebase.';
+  if (/unauthorized-domain|requests-from-referer/i.test(c)) return 'falta agregar sociedad-palmira.github.io a los dominios autorizados de Firebase.';
+  if (/permission-denied|insufficient permissions/i.test(c)) return 'la base de datos no dio permiso (revisa las reglas de Firestore o entra con el usuario del taller).';
+  if (/not-found|NOT_FOUND|does not exist/i.test(c)) return 'falta crear la base de datos Firestore en Firebase.';
+  return (e && e.message) || 'error desconocido.';
+};
+const marcarSubido = clave => { const r = RECIENTES.find(x => x.clave === clave); if (r && !r.nube){ r.nube = true; guardarRecientes(); refrescarInicio(); } };
+async function subirProyecto(raw, pr, avisar){
+  if (!USUARIO || !raw || pr.manual || raw === PROYECTO_EJEMPLO) return false;
+  const { db } = await nube();
+  const datos = JSON.stringify(raw);
+  if (datos.length > 950000) throw new Error('El proyecto es demasiado grande para la base de datos (más de 1 MB).');
+  const ref = db.collection('proyectos').doc(pr.pid);
+  const ya = await ref.get();
+  if (!ya.exists){
+    const ahora = window.firebase.firestore.FieldValue.serverTimestamp();
+    const b = db.batch();
+    b.set(ref, { nombre: pr.nombre, exportado: pr.exportado || '', datos, subido: ahora, por: USUARIO.email || '' });
+    b.set(db.collection('proyectos_lista').doc(pr.pid), { nombre: pr.nombre, exportado: pr.exportado || '', tablas: pr.inst.length, muebles: pr.muebles.length, subido: ahora, por: USUARIO.email || '' });
+    await b.commit();
+    if (avisar) toast(`"${pr.nombre}" quedó guardado en la base de datos: sus QR ya se ven desde cualquier teléfono.`);
+    listaNube();
+  }
+  marcarSubido(pr.clave);
+  return true;
+}
+function subirAuto(raw){
+  if (!USUARIO || !P || P.manual || raw === PROYECTO_EJEMPLO) return;
+  const pr = P;
+  subirProyecto(raw, pr, true).catch(e => { console.error(e); toast(`No se pudo guardar "${pr.nombre}" en la base de datos: ${errorNube(e)}`, { texto: 'Cuenta', fn: abrirCuenta }); });
+}
+let subiendo = false;
+async function subirPendientes(){
+  if (subiendo || !USUARIO) return; subiendo = true;
+  try { for (const r of RECIENTES.filter(x => !x.nube && x.raw)){ try { await subirProyecto(r.raw, procesar(r.raw), false); } catch(e){ console.error(e); } } }
+  finally { subiendo = false; }
+}
+async function listaNube(){
+  if (!USUARIO) return;
+  try {
+    const { db } = await nube();
+    const q = await db.collection('proyectos_lista').orderBy('subido', 'desc').limit(60).get();
+    NUBE_LISTA = q.docs.map(d => Object.assign({ pid: d.id }, d.data()));
+    NUBE_ERR = '';
+  } catch(e){ console.error(e); NUBE_ERR = errorNube(e); }
+  refrescarInicio();
+}
+async function proyectoDeNube(pid){
+  const { db } = await nube();
+  const d = await db.collection('proyectos').doc(pid).get();
+  return d.exists ? JSON.parse(d.data().datos) : null;
+}
+async function abrirDeNube(pid, nombre){
+  toast(`Bajando "${nombre || 'proyecto'}"…`);
+  try {
+    const raw = await proyectoDeNube(pid);
+    if (!raw){ toast('Ese proyecto ya no está en la base de datos.'); listaNube(); return; }
+    iniciarProyecto(raw); marcarSubido(P.clave);
+  } catch(e){ console.error(e); toast(`No se pudo abrir: ${errorNube(e)}`); }
+}
+/* cuenta del taller */
+function pintarCuenta(){
+  const b = $('#btnCuenta'); if (!b) return;
+  b.innerHTML = USUARIO ? `<span class="dot ok"></span>${esc((USUARIO.email || 'Taller').split('@')[0])}` : 'Entrar';
+  b.setAttribute('aria-label', USUARIO ? `Cuenta del taller: ${USUARIO.email}` : 'Entrar con la cuenta del taller');
+  if (!$('#cuentaSheet').hidden) renderCuenta();
+}
+function renderCuenta(){
+  const dentro = !!USUARIO;
+  $('#cuentaFuera').hidden = dentro; $('#cuentaDentro').hidden = !dentro;
+  if (dentro){
+    const pend = RECIENTES.filter(r => !r.nube).length;
+    $('#cuentaQuien').textContent = USUARIO.email || '';
+    $('#cuentaPend').textContent = pend ? `${pend} ${pend === 1 ? 'proyecto de este equipo todavía no está' : 'proyectos de este equipo todavía no están'} en la base de datos.` : 'Todos los proyectos de este equipo están en la base de datos.';
+    $('#cuentaSubir').hidden = !pend;
+  }
+  $('#cuentaMsg').textContent = '';
+}
+function abrirCuenta(){ renderCuenta(); $('#cuentaSheet').hidden = false; (USUARIO ? $('#cuentaClose') : $('#cuEmail')).focus(); nube().catch(e => { $('#cuentaMsg').textContent = 'No se pudo conectar con la base de datos: ' + errorNube(e); }); }
+$('#btnCuenta').addEventListener('click', abrirCuenta);
+$('#cuentaClose').addEventListener('click', () => { $('#cuentaSheet').hidden = true; });
+$('#cuentaSheet').addEventListener('click', e => { if (e.target.id === 'cuentaSheet') $('#cuentaSheet').hidden = true; });
+$('#cuentaForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#cuentaForm button[type=submit]'), msg = $('#cuentaMsg');
+  btn.disabled = true; msg.textContent = 'Entrando…';
+  try {
+    const { auth } = await nube();
+    await auth.signInWithEmailAndPassword($('#cuEmail').value.trim(), $('#cuClave').value);
+    $('#cuClave').value = ''; renderCuenta(); toast('Listo: este equipo está conectado a la base de datos del taller.');
+  } catch(err){ console.error(err); msg.textContent = 'No se pudo entrar: ' + errorNube(err); }
+  finally { btn.disabled = false; }
+});
+$('#cuentaSalir').addEventListener('click', async () => { try { const { auth } = await nube(); await auth.signOut(); } catch(e){} renderCuenta(); toast('Saliste de la cuenta del taller en este equipo.'); });
+$('#cuentaSubir').addEventListener('click', async () => { $('#cuentaMsg').textContent = 'Subiendo…'; await subirPendientes(); renderCuenta(); $('#cuentaMsg').textContent = RECIENTES.some(r => !r.nube) ? 'Algunos proyectos no se pudieron subir. Revisa la conexión.' : 'Listo.'; });
+
 /* ---------- Arranque ---------- */
 function renderAll(){
   const man = P.manual;
@@ -4948,14 +5121,14 @@ function renderAll(){
   $('#btn3dAll').hidden = P.sin3d; $('#btnEditJob').hidden = !man;
   renderAlerts(); renderWork(); renderProgress(); renderEtiqueta(false);
 }
-function iniciarProyecto(raw){
+function iniciarProyecto(raw, opts){
+  const visita = !!(opts && opts.visita);
   const nuevo = procesar(raw);
   P = nuevo; etqSobr = null; etqRollo = null;
   const d = leer(P.clave, null); USO = (d && d.sobr) || {};
   document.body.classList.remove('en-inicio');
   dimensionar(); cargarEstado(); renderAll();
-  guardar('palmira-taller:ultimo', raw);
-  recordarProyecto(raw);
+  if (!visita){ guardar('palmira-taller:ultimo', raw); recordarProyecto(raw); subirAuto(raw); }
   window.scrollTo(0, 0);
 }
 // Busca la pieza del QR en los proyectos guardados en este equipo: el abierto, el último, los recientes y el de ejemplo.
@@ -4976,12 +5149,15 @@ function buscarProyectoQR(pid, code){
 }
 function avisoQR(tipo, code){
   if (!P) mostrarInicio();
-  const prueba = tipo === 'prueba';
-  $('#qrTitle').textContent = prueba ? 'QR leído correctamente' : 'Este teléfono no tiene el proyecto de esta etiqueta';
-  $('#qrText').textContent = prueba
-    ? 'Es el QR de la etiqueta de prueba de la impresora. Funciona: el QR de cada pieza abre el mueble en 3D con la pieza marcada en amarillo.'
-    : `La etiqueta es de la pieza ${code}. Por ahora, el modelo 3D se ve en los equipos donde se abrió ese proyecto, como la tablet de la escuadradora. Cuando la app tenga la base de datos compartida, se va a ver desde cualquier teléfono.`;
-  $('#qrSheet').hidden = false; $('#qrClose').focus();
+  const T = {
+    prueba: ['QR leído correctamente', 'Es el QR de la etiqueta de prueba de la impresora. Funciona: el QR de cada pieza abre el mueble en 3D con la pieza marcada en amarillo.'],
+    buscando: ['Buscando el proyecto…', `Bajando el mueble de la pieza ${code} desde la base de datos del taller.`],
+    falta: ['No se encontró el proyecto de esta etiqueta', `La etiqueta es de la pieza ${code}, pero su proyecto no está en este teléfono ni en la base de datos. Pasa cuando el proyecto se abrió en un equipo que no estaba conectado con la cuenta del taller: ábrelo de nuevo en ese equipo, ya conectado, y el QR va a funcionar.`],
+    sinred: ['No se pudo buscar el proyecto', `La etiqueta es de la pieza ${code}. Para ver su mueble en 3D, este teléfono necesita internet. Revisa la conexión y vuelve a escanear.`]
+  }[tipo];
+  $('#qrTitle').textContent = T[0]; $('#qrText').textContent = T[1];
+  $('#qrClose').hidden = tipo === 'buscando';
+  $('#qrSheet').hidden = false; if (tipo !== 'buscando') $('#qrClose').focus();
 }
 $('#qrClose').addEventListener('click', () => { $('#qrSheet').hidden = true; });
 $('#qrSheet').addEventListener('click', e => { if (e.target.id === 'qrSheet') $('#qrSheet').hidden = true; });
@@ -4991,10 +5167,17 @@ function desdeQR(){
   if (h === 'PRUEBA'){ avisoQR('prueba'); return true; }
   const m = /^([0-9a-z]+)\/(.+)$/.exec(h), pid = m ? m[1] : '', code = m ? m[2] : h;
   const raw = buscarProyectoQR(pid, code);
-  if (!raw){ avisoQR('falta', code); return true; }
-  if (!P || P.raw !== raw) iniciarProyecto(raw);
-  document.body.classList.remove('en-inicio'); $$('.sheet').forEach(s => { s.hidden = true; });
-  abrirVisor(code, true);
+  const mostrar = (r, visita) => {
+    if (!P || P.raw !== r) iniciarProyecto(r, { visita });
+    document.body.classList.remove('en-inicio'); $$('.sheet').forEach(s => { s.hidden = true; });
+    abrirVisor(code, true);
+  };
+  if (raw){ mostrar(raw, false); return true; }
+  if (!pid){ avisoQR('falta', code); return true; }
+  avisoQR('buscando', code);
+  proyectoDeNube(pid)
+    .then(r => { if (r && procesar(r).byCode[code]) mostrar(r, true); else avisoQR('falta', code); })
+    .catch(e => { console.error(e); avisoQR('sinred', code); });
   return true;
 }
 // el último proyecto de SketchUp abierto antes de que existiera la lista de recientes
@@ -5005,6 +5188,7 @@ function desdeQR(){
 })();
 const porQR = location.hash ? desdeQR() : false;
 if (!porQR && !P) mostrarInicio();
+if (!vistaPrevia) nube().catch(() => {});
 window.addEventListener('hashchange', desdeQR);
 })();
 </script>
