@@ -640,6 +640,15 @@ button,input,select{font:inherit;color:inherit}
   </div>
 </div>
 
+<div class="sheet" id="qrSheet" hidden role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+  <div class="sheet-card">
+    <p class="eyebrow">Código QR</p>
+    <h3 id="qrTitle"></h3>
+    <p id="qrText"></p>
+    <div class="sheet-actions"><button class="btn btn-primary" id="qrClose" type="button">Entendido</button></div>
+  </div>
+</div>
+
 <div class="sheet" id="restoSheet" hidden role="dialog" aria-modal="true" aria-labelledby="restoTitle">
   <div class="sheet-card">
     <p class="eyebrow" id="restoMat"></p>
@@ -3005,6 +3014,8 @@ const capital = s => { s = String(s || '').trim(); return s ? s[0].toUpperCase()
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : NaN; };
 const fechaCorta = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}-${m[2]}` : ''; };
+// identificador corto (FNV-1a en base 36) para saber de qué proyecto es un QR
+const hashCorto = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
 const SERVICIOS = { corte_enchape: 'Corte y enchape', corte: 'Solo corte', enchape: 'Solo enchape' };
 // RUT chileno: 12.345.678-5 (dígito verificador con módulo 11)
 const rutLimpio = s => String(s || '').toUpperCase().replace(/[^0-9K]/g, '');
@@ -3066,6 +3077,7 @@ function procesar(raw){
   proy.byCode = {}; proy.piezas.forEach(p => { proy.byCode[p.code] = p; });
   proy.byId = {}; proy.inst.forEach(i => { proy.byId[i.id] = i; });
   proy.clave = manual && raw.trabajo && raw.trabajo.id ? 'palmira-taller:trabajo:' + raw.trabajo.id + ':' + (raw.trabajo.servicio || '') : 'palmira-taller:' + proy.nombre + ':' + proy.exportado;
+  proy.pid = hashCorto(proy.clave); proy.raw = raw;
   return proy;
 }
 const servicio = (proy = P) => (proy && proy.manual && proy.manual.servicio) || 'corte_enchape';
@@ -3456,7 +3468,7 @@ function pintar(...ids){
 function marcarUltima(id){ const prev = last; last = id; pintar(prev !== id ? prev : null, id); }
 
 /* ---------- Etiqueta 60 × 40 mm (unidades de 0,1 mm, negro sobre blanco) ---------- */
-const qrTexto = code => (BASE_URL || location.href.split('#')[0]) + '#' + code;
+const qrTexto = (code, conProyecto = true) => (BASE_URL || location.href.split('#')[0]) + '#' + (conProyecto && P && P.pid ? P.pid + '/' : '') + code;
 function qrSVG(text, x, y, size){
   if (typeof window.qrcode !== 'function'){
     return `<rect x="${x}" y="${y}" width="${size}" height="${size}" fill="none" stroke="#000" stroke-width="3"/><text x="${x + size/2}" y="${y + size/2 + 12}" text-anchor="middle" font-size="34" font-family="sans-serif" fill="#000">QR</text>`;
@@ -3726,7 +3738,7 @@ function pruebaSVG(){
   s += `<text x="38" y="196" font-family="${FD}" font-weight="600" font-size="30" fill="#000">Etiqueta 60 × 40 mm · ${hora}</text>`;
   s += `<text x="38" y="240" font-family="${FM}" font-weight="600" font-size="24" fill="#000">ÁÉÍÓÚ Ñ 1.234 × 567</text>`;
   s += `<text x="38" y="350" font-family="${FD}" font-weight="600" font-size="28" fill="#000">El marco debe verse completo</text>`;
-  s += qrSVG(qrTexto('PRUEBA'), 414, 110, 166);
+  s += qrSVG(qrTexto('PRUEBA', false), 414, 110, 166);
   s += `<text x="497" y="300" text-anchor="middle" font-family="${FD}" font-weight="600" font-size="22" fill="#000">Escanea para probar</text>`;
   return s + '</svg>';
 }
@@ -3926,6 +3938,7 @@ document.addEventListener('keydown', e => {
   else if (!$('#sobSheet').hidden){ $('#sobSheet').hidden = true; refrescarInicio(); }
   else if (!$('#tcSheet').hidden){ $('#tcSheet').hidden = true; refrescarInicio(); }
   else if (!$('#prnSheet').hidden) $('#prnSheet').hidden = true;
+  else if (!$('#qrSheet').hidden) $('#qrSheet').hidden = true;
   else if (!$('#viewer').hidden && !document.body.classList.contains('solo')) cerrarVisor();
 });
 
@@ -4945,12 +4958,44 @@ function iniciarProyecto(raw){
   recordarProyecto(raw);
   window.scrollTo(0, 0);
 }
+// Busca la pieza del QR en los proyectos guardados en este equipo: el abierto, el último, los recientes y el de ejemplo.
+// Si el QR trae el proyecto (etiquetas nuevas), solo sirve ese; si no (etiquetas antiguas), el primero que tenga ese código.
+function buscarProyectoQR(pid, code){
+  const lista = [];
+  if (P && !P.manual) lista.push(P.raw);
+  const ult = leer('palmira-taller:ultimo', null); if (ult && ult.origen !== 'manual') lista.push(ult);
+  RECIENTES.forEach(r => lista.push(r.raw));
+  lista.push(PROYECTO_EJEMPLO);
+  for (const raw of lista){
+    if (!raw) continue;
+    let pr; try { pr = P && raw === P.raw ? P : procesar(raw); } catch(e){ continue; }
+    if (pr.sin3d || !pr.byCode[code] || (pid && pr.pid !== pid)) continue;
+    return raw;
+  }
+  return null;
+}
+function avisoQR(tipo, code){
+  if (!P) mostrarInicio();
+  const prueba = tipo === 'prueba';
+  $('#qrTitle').textContent = prueba ? 'QR leído correctamente' : 'Este teléfono no tiene el proyecto de esta etiqueta';
+  $('#qrText').textContent = prueba
+    ? 'Es el QR de la etiqueta de prueba de la impresora. Funciona: el QR de cada pieza abre el mueble en 3D con la pieza marcada en amarillo.'
+    : `La etiqueta es de la pieza ${code}. Por ahora, el modelo 3D se ve en los equipos donde se abrió ese proyecto, como la tablet de la escuadradora. Cuando la app tenga la base de datos compartida, se va a ver desde cualquier teléfono.`;
+  $('#qrSheet').hidden = false; $('#qrClose').focus();
+}
+$('#qrClose').addEventListener('click', () => { $('#qrSheet').hidden = true; });
+$('#qrSheet').addEventListener('click', e => { if (e.target.id === 'qrSheet') $('#qrSheet').hidden = true; });
 function desdeQR(){
   const h = decodeURIComponent(location.hash.slice(1)); if (!h) return false;
-  // el QR abre el visor 3D del proyecto (en la versión instalada se buscará en la base de datos compartida)
-  if (!P){ const ult = leer('palmira-taller:ultimo', null); try { iniciarProyecto(ult || PROYECTO_EJEMPLO); } catch(e){ iniciarProyecto(PROYECTO_EJEMPLO); } }
-  if (!P.sin3d && P.byCode[h]){ abrirVisor(h, true); return true; }
-  return false;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
+  if (h === 'PRUEBA'){ avisoQR('prueba'); return true; }
+  const m = /^([0-9a-z]+)\/(.+)$/.exec(h), pid = m ? m[1] : '', code = m ? m[2] : h;
+  const raw = buscarProyectoQR(pid, code);
+  if (!raw){ avisoQR('falta', code); return true; }
+  if (!P || P.raw !== raw) iniciarProyecto(raw);
+  document.body.classList.remove('en-inicio'); $$('.sheet').forEach(s => { s.hidden = true; });
+  abrirVisor(code, true);
+  return true;
 }
 // el último proyecto de SketchUp abierto antes de que existiera la lista de recientes
 (function(){
@@ -4958,8 +5003,8 @@ function desdeQR(){
   if (RECIENTES.length || !ult || ult.origen === 'manual' || !Array.isArray(ult.muebles)) return;
   try { const pr = procesar(ult); RECIENTES = [{ clave: pr.clave, nombre: pr.nombre, exportado: pr.exportado, total: pr.inst.length, abierto: new Date().toISOString(), raw: ult }]; guardarRecientes(); } catch(e){}
 })();
-if (location.hash) desdeQR();
-if (!P) mostrarInicio();
+const porQR = location.hash ? desdeQR() : false;
+if (!porQR && !P) mostrarInicio();
 window.addEventListener('hashchange', desdeQR);
 })();
 </script>
